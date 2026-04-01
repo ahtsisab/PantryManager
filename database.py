@@ -79,6 +79,12 @@ if DATABASE_URL:
                 created_at           BIGINT  NOT NULL
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_category_overrides (
+                name_lower  TEXT PRIMARY KEY,
+                category    TEXT NOT NULL
+            )
+        """)
         # Commit CREATE TABLE statements before running migrations.
         # Postgres requires tables to be visible before ALTER TABLE can reference them.
         conn.commit()
@@ -149,6 +155,10 @@ else:
                 category_overridden  INTEGER NOT NULL DEFAULT 0,
                 last_purchased_date  TEXT,
                 created_at           INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS user_category_overrides (
+                name_lower  TEXT PRIMARY KEY,
+                category    TEXT NOT NULL
             );
         """)
         _run_migrations_sqlite(conn)

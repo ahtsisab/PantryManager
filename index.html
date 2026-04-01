@@ -447,6 +447,11 @@ async function addItem(listId) {
     const item = await res.json();
     if (!itemsCache[listId]) itemsCache[listId] = [];
     itemsCache[listId].push(item);
+    // Keep autocomplete history in sync within the session
+    if (!suggHistory.some(h => h.toLowerCase() === item.name.toLowerCase())) {
+      suggHistory.push(item.name);
+      suggHistory.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    }
     refreshCard(listId);
   } catch(e) { showToast('Could not add item'); }
 }
@@ -796,6 +801,10 @@ async function addPantryItem() {
     });
     const item = await res.json();
     pantryItems.push(item);
+    if (!suggHistory.some(h => h.toLowerCase() === item.name.toLowerCase())) {
+      suggHistory.push(item.name);
+      suggHistory.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    }
     renderPantry();
     closeModal('pantry');
     showToast(`${name} added to pantry`, 'pantry');
@@ -896,13 +905,17 @@ function catEmoji(cat) {
 }
 
 // ── AUTOCOMPLETE ─────────────────────────────────────────
-let suggestions = [];
+// history = names user has actually added before (from DB, loaded at startup)
+// hardcoded = common keyword suggestions
+let suggHistory   = [];
+let suggHardcoded = [];
 
 async function loadSuggestions() {
   try {
-    const res = await fetch(`${API}/suggestions`);
+    const res  = await fetch(`${API}/suggestions`);
     const data = await res.json();
-    suggestions = data.suggestions || [];
+    suggHistory   = data.history   || [];
+    suggHardcoded = data.hardcoded || [];
   } catch(e) {}
 }
 
@@ -916,22 +929,25 @@ function attachAutocomplete(input, onSelect) {
   wrap.appendChild(dropdown);
   let focusedIdx = -1;
 
-  function isHistory(s) {
-    const sl = s.toLowerCase();
-    return pantryItems.some(p => p.name.toLowerCase() === sl) ||
-      Object.values(itemsCache).flat().some(i => i.name.toLowerCase() === sl);
-  }
-
   function getMatches(query) {
     if (!query || query.length < 1) return [];
     const ql = query.toLowerCase();
-    const starts = suggestions.filter(s => s.toLowerCase().startsWith(ql));
-    const contains = suggestions.filter(s => s.toLowerCase().includes(ql) && !s.toLowerCase().startsWith(ql));
-    const all = [...new Set([...starts, ...contains])];
-    // recent items first
-    const recent = all.filter(s => isHistory(s));
-    const rest = all.filter(s => !isHistory(s));
-    return [...recent, ...rest].slice(0, 8);
+    const match = arr => arr.filter(s => s.toLowerCase().includes(ql));
+    // History items that start with query rank highest, then all history, then hardcoded
+    const hStarts   = match(suggHistory).filter(s => s.toLowerCase().startsWith(ql));
+    const hContains = match(suggHistory).filter(s => !s.toLowerCase().startsWith(ql));
+    const hard      = match(suggHardcoded);
+    const seen = new Set();
+    const out = [];
+    for (const s of [...hStarts, ...hContains, ...hard]) {
+      if (!seen.has(s.toLowerCase())) { seen.add(s.toLowerCase()); out.push(s); }
+      if (out.length >= 8) break;
+    }
+    return out;
+  }
+
+  function isRecent(s) {
+    return suggHistory.some(h => h.toLowerCase() === s.toLowerCase());
   }
 
   function highlight(text, query) {
@@ -949,7 +965,7 @@ function attachAutocomplete(input, onSelect) {
     dropdown.innerHTML = matches.map((s, i) =>
       '<div class="ac-item" data-idx="' + i + '" data-value="' + esc(s) + '">' +
         highlight(s, query) +
-        (isHistory(s) ? '<span class="ac-item-source">recent</span>' : '') +
+        (isRecent(s) ? '<span class="ac-item-source">recent</span>' : '') +
       '</div>'
     ).join('');
     dropdown.classList.add('open');

@@ -15,7 +15,7 @@ from database import (
     normalize_item, normalize_pantry,
     get_or_create_shopping_list,
 )
-from categories import CATEGORY_KEYWORDS, VALID_CATEGORIES, classify_item
+from categories import CATEGORY_KEYWORDS, VALID_CATEGORIES, classify_item, classify_item_with_overrides, save_category_override
 
 router = APIRouter(tags=["pantry"])
 
@@ -63,37 +63,35 @@ def get_categories():
 @router.get("/suggestions")
 def get_suggestions():
     """
-    Return a merged, deduplicated list of autocomplete suggestions from:
-      1. The hardcoded keyword table (common grocery items per category)
-      2. All distinct item names previously added to any grocery list
-      3. All distinct pantry item names
+    Return autocomplete suggestions split into two lists:
+      - history: distinct item names the user has actually added before (ranked first)
+      - hardcoded: common grocery keywords from the classification table
 
-    The frontend merges these and filters client-side as the user types.
+    The frontend shows history items first, labelled "recent".
     """
-    # Source 1: hardcoded keywords — use multi-word ones and title-case singles
+    # Hardcoded keywords — multi-word and meaningful single words, title-cased
     hardcoded: set[str] = set()
     for keywords in CATEGORY_KEYWORDS.values():
         for kw in keywords:
-            # Include multi-word keywords and single words longer than 3 chars
             if " " in kw or len(kw) > 3:
                 hardcoded.add(kw.title())
 
-    # Source 2 + 3: historical names from DB
+    # History from DB: all distinct names ever added to grocery lists or pantry
     conn = get_db()
     cur  = conn.cursor()
     cur.execute("SELECT DISTINCT name FROM items WHERE name IS NOT NULL AND name != ''")
-    history_items = {row["name"] for row in fetchall(cur)}
+    history: set[str] = {row["name"] for row in fetchall(cur)}
     cur.execute("SELECT DISTINCT name FROM pantry WHERE name IS NOT NULL AND name != ''")
-    history_pantry = {row["name"] for row in fetchall(cur)}
+    history |= {row["name"] for row in fetchall(cur)}
     cur.close(); conn.close()
 
-    # Merge all sources, sorted alphabetically
-    all_suggestions = sorted(
-        hardcoded | history_items | history_pantry,
-        key=lambda s: s.lower()
-    )
+    # Remove hardcoded entries that are already in history (history copy takes precedence)
+    hardcoded -= {h.title() for h in history}
 
-    return {"suggestions": all_suggestions}
+    return {
+        "history":   sorted(history,   key=lambda s: s.lower()),
+        "hardcoded": sorted(hardcoded, key=lambda s: s.lower()),
+    }
 
 
 # ── PANTRY CRUD ────────────────────────────────────────────────────────────────
@@ -117,8 +115,9 @@ def add_pantry_item(body: PantryCreate):
     if body.category and body.category in VALID_CATEGORIES:
         category   = body.category
         overridden = True
+        save_category_override(body.name, body.category, get_db, q)
     else:
-        category   = classify_item(body.name)
+        category   = classify_item_with_overrides(body.name, get_db, q, fetchone)
         overridden = False
 
     conn = get_db()
@@ -214,11 +213,12 @@ def delete_pantry_item(pantry_id: str):
 # ── PRIVATE HELPERS ────────────────────────────────────────────────────────────
 
 def _resolve_category(body: PantryUpdate, existing: dict) -> tuple[str, bool]:
-    """Return (category, overridden) for the update."""
+    """Return (category, overridden) for the update. Persists user overrides to DB."""
     if body.category and body.category in VALID_CATEGORIES:
+        save_category_override(existing["name"], body.category, get_db, q)
         return body.category, True
     return (
-        existing.get("category") or classify_item(existing["name"]),
+        existing.get("category") or classify_item_with_overrides(existing["name"], get_db, q, fetchone),
         bool(existing.get("category_overridden")),
     )
 

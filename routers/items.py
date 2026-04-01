@@ -17,7 +17,7 @@ from database import (
     get_db, q, fetchall, fetchone,
     assert_list_exists, normalize_item, normalize_pantry,
 )
-from categories import classify_item, try_add_quantities
+from categories import classify_item_with_overrides, try_add_quantities
 
 router = APIRouter(prefix="/lists/{list_id}/items", tags=["items"])
 
@@ -168,7 +168,7 @@ def _upsert_pantry(cur, conn, grocery_item: dict,
         conn.commit()
         cur.execute(q("SELECT * FROM pantry WHERE id = ?"), (existing_pantry["id"],))
     else:
-        category = classify_item(grocery_item["name"])
+        category = classify_item_with_overrides(grocery_item["name"], get_db, q, fetchone)
         p_id     = str(uuid.uuid4())
         now      = int(time.time())
         cur.execute(

@@ -77,3 +77,45 @@ def try_add_quantities(existing: str, incoming: str) -> str:
 
     # Units mismatch or non-numeric — keep the incoming value
     return incoming
+
+
+def classify_item_with_overrides(name: str, get_db_fn, q_fn, fetchone_fn) -> str:
+    """
+    Classify an item, checking user overrides in DB before keyword matching.
+    Pass in get_db, q, fetchone from database module to avoid circular imports.
+    """
+    try:
+        conn = get_db_fn()
+        cur  = conn.cursor()
+        cur.execute(q_fn("SELECT category FROM user_category_overrides WHERE name_lower = ?"),
+                    (name.strip().lower(),))
+        row = fetchone_fn(cur)
+        cur.close(); conn.close()
+        if row:
+            return row["category"]
+    except Exception:
+        pass
+    return classify_item(name)
+
+
+def save_category_override(name: str, category: str, get_db_fn, q_fn) -> None:
+    """Persist a user category override so future auto-classifications use it."""
+    try:
+        conn = get_db_fn()
+        cur  = conn.cursor()
+        # Upsert: update if exists, insert if not
+        try:
+            cur.execute(
+                q_fn("INSERT INTO user_category_overrides (name_lower, category) VALUES (?, ?)"),
+                (name.strip().lower(), category)
+            )
+        except Exception:
+            conn.rollback()
+            cur.execute(
+                q_fn("UPDATE user_category_overrides SET category = ? WHERE name_lower = ?"),
+                (category, name.strip().lower())
+            )
+        conn.commit()
+        cur.close(); conn.close()
+    except Exception:
+        pass
