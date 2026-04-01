@@ -34,16 +34,16 @@ const API = 'https://web-production-fb421.up.railway.app';
 |-|-|-|
 |GET|`/lists`|Get all lists|
 |POST|`/lists`|Create a list `{"name": "Costco Run"}`|
-|DELETE|`/lists/{list\_id}`|Delete a list (and all its items)|
+|DELETE|`/lists/{list\\\_id}`|Delete a list (and all its items)|
 
 ### Items
 
 |Method|Endpoint|Description|
 |-|-|-|
-|GET|`/lists/{list\_id}/items`|Get all items in a list|
-|POST|`/lists/{list\_id}/items`|Add an item `{"name": "Milk"}`|
-|PATCH|`/lists/{list\_id}/items/{item\_id}`|Toggle purchased `{"purchased": true}`|
-|DELETE|`/lists/{list\_id}/items/{item\_id}`|Remove an item|
+|GET|`/lists/{list\\\_id}/items`|Get all items in a list|
+|POST|`/lists/{list\\\_id}/items`|Add an item `{"name": "Milk"}`|
+|PATCH|`/lists/{list\\\_id}/items/{item\\\_id}`|Toggle purchased `{"purchased": true}`|
+|DELETE|`/lists/{list\\\_id}/items/{item\\\_id}`|Remove an item|
 
 \---
 

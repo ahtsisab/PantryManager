@@ -134,6 +134,8 @@
     .pantry-info { flex:1; min-width:0; }
     .pantry-name { font-size:.92rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .pantry-meta { font-size:.73rem; color:var(--brown); opacity:.55; margin-top:2px; display:flex; gap:8px; flex-wrap:wrap; }
+    .pantry-qty-badge { cursor:pointer; transition:color .15s; }
+    .pantry-qty-badge:hover { color:var(--amber); text-decoration:underline dotted; }
     .pantry-cat-badge { background:var(--paper); border:1px solid var(--line); border-radius:4px; padding:0 5px; font-size:.68rem; cursor:pointer; transition:border-color .15s; }
     .pantry-cat-badge:hover { border-color:var(--amber); }
     .pantry-controls { display:flex; align-items:center; gap:6px; flex-shrink:0; }
@@ -182,7 +184,7 @@
 </head>
 <body>
 <div class="app">
-  <header><h1>Family <span>Groceries</span></h1></header>
+  <header><h1>PBJ <span>Groceries</span></h1></header>
 
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('grocery')" id="tab-grocery">🛒 Grocery Lists</button>
@@ -650,7 +652,8 @@ function pantryCardHTML(item) {
       <div class="pantry-info">
         <div class="pantry-name">${esc(item.name)}</div>
         <div class="pantry-meta">
-          <span>Qty: ${esc(item.quantity)}</span>
+          <span class="pantry-qty-badge" onclick="editPantryQty('${item.id}', this)"
+            title="Click to edit quantity">Qty: ${esc(item.quantity)}</span>
           <span class="pantry-cat-badge" onclick="openCatPopover(event,'${item.id}')" title="Change category">
             ${overriddenDot}${esc(item.category)}
           </span>
@@ -669,6 +672,40 @@ function pantryCardHTML(item) {
         </button>
       </div>
     </div>`;
+}
+
+function editPantryQty(pantryId, badge) {
+  const current = badge.textContent.replace(/^Qty:\s*/, '').trim();
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'item-qty-input';
+  input.value = current;
+  input.maxLength = 20;
+  input.style.width = '64px';
+  badge.replaceWith(input);
+  input.focus();
+  input.select();
+
+  async function save() {
+    const newQty = input.value.trim() || '1';
+    try {
+      const res = await fetch(`${API}/pantry/${pantryId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: newQty })
+      });
+      const data = await res.json();
+      const idx = pantryItems.findIndex(p => p.id === pantryId);
+      if (idx !== -1) pantryItems[idx] = data.pantry_item;
+      renderPantry();
+      renderLists(); // keep grocery hints in sync
+    } catch(e) { showToast('Could not update quantity'); renderPantry(); }
+  }
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') renderPantry();
+  });
 }
 
 // ── CATEGORY POPOVER ──────────────────────────────────────
@@ -757,6 +794,7 @@ async function updatePantryStatus(pantryId, newStatus) {
     const idx = pantryItems.findIndex(p => p.id === pantryId);
     if (idx !== -1) pantryItems[idx] = data.pantry_item;
     renderPantry();
+    renderLists(); // ✅ fix: refresh grocery hints after status change
     if (data.grocery_item) {
       await loadLists();
       showToast(`${data.pantry_item.name} added to Shopping list`, 'shopping');
