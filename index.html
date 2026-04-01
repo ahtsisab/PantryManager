@@ -71,6 +71,11 @@
     /* date pill shown after purchase */
     .item-date-pill { font-size:.68rem; color:var(--brown); opacity:.55; background:var(--paper); border:1px solid var(--line); border-radius:5px; padding:1px 6px; white-space:nowrap; flex-shrink:0; }
 
+    /* pantry stock hint on unpurchased grocery items */
+    .pantry-hint { font-size:.68rem; color:var(--sage); font-weight:600; background:#f0f5f0; border:1px solid #c2d9c4; border-radius:5px; padding:1px 6px; white-space:nowrap; flex-shrink:0; cursor:default; }
+    .pantry-hint-low { color:#9a7000; background:#fdf7e3; border-color:#e8d080; }
+    .pantry-hint-out { color:var(--rose); background:#fdf0ee; border-color:#e8b8b0; }
+
     .item-qty { font-size:.75rem; font-weight:600; color:var(--brown); background:var(--paper); border:1.5px solid var(--line); border-radius:6px; padding:2px 7px; cursor:pointer; transition:border-color .15s,background .15s; flex-shrink:0; min-width:28px; text-align:center; user-select:none; }
     .item-qty:hover { border-color:var(--amber); background:#fff8ee; }
     .item-qty-input { width:52px; font-size:.8rem; font-family:'DM Sans',sans-serif; border:1.5px solid var(--amber); border-radius:6px; padding:2px 6px; text-align:center; outline:none; color:var(--bark); background:white; flex-shrink:0; }
@@ -177,7 +182,7 @@
 </head>
 <body>
 <div class="app">
-  <header><h1>PBJ <span>Pantry</span></h1></header>
+  <header><h1>Family <span>Groceries</span></h1></header>
 
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('grocery')" id="tab-grocery">🛒 Grocery Lists</button>
@@ -354,10 +359,27 @@ function listCardHTML(list) {
 
 function itemRowHTML(item, listId) {
   const qty = item.quantity || '1';
+
+  // Date pill — shown on purchased items
   const dateStr = item.purchased && item.purchased_date
     ? `<span class="item-date-pill">${formatDate(item.purchased_date)}</span>` : '';
 
-  // If this item is pending date selection, inject the date picker row after the item row
+  // Pantry hint — shown on unpurchased items that already exist in the pantry
+  let pantryHintHTML = '';
+  if (!item.purchased) {
+    const pantryMatch = pantryItems.find(
+      p => p.name.trim().toLowerCase() === item.name.trim().toLowerCase()
+    );
+    if (pantryMatch) {
+      const statusClass = pantryMatch.status === 'low' ? ' pantry-hint-low'
+                        : pantryMatch.status === 'out' ? ' pantry-hint-out' : '';
+      const statusNote  = pantryMatch.status === 'low' ? ' (low)' 
+                        : pantryMatch.status === 'out' ? ' (out)' : '';
+      pantryHintHTML = `<span class="pantry-hint${statusClass}" title="Current pantry stock">🥫 ${esc(pantryMatch.quantity)}${statusNote}</span>`;
+    }
+  }
+
+  // Inline date picker row — shown when user is checking off an item
   const pending = pendingDates[item.id];
   const datePickerRow = pending ? `
     <li class="date-picker-row" id="datepicker-${item.id}">
@@ -373,6 +395,7 @@ function itemRowHTML(item, listId) {
         onchange="onCheckChange('${listId}','${item.id}',this)"/>
       <span class="item-name ${item.purchased ? 'done' : ''}">${esc(item.name)}</span>
       ${dateStr}
+      ${pantryHintHTML}
       <span class="item-qty" onclick="editQty('${listId}','${item.id}',this)">${esc(qty)}</span>
       <button class="btn-delete-item" onclick="deleteItem('${listId}','${item.id}')" title="Remove">✕</button>
     </li>${datePickerRow}`;
@@ -537,6 +560,7 @@ async function loadPantry() {
     const res = await fetch(`${API}/pantry`);
     pantryItems = await res.json();
     renderPantry();
+    renderLists(); // refresh grocery hints whenever pantry data changes
   } catch(e) {}
 }
 

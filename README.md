@@ -17,28 +17,35 @@ uvicorn main:app --reload
 API will be live at: http://localhost:8000  
 Interactive docs: http://localhost:8000/docs
 
----
+Script for Railway:
+
+```
+const API = 'https://web-production-fb421.up.railway.app';
+
+```
+
+\---
 
 ## API Reference
 
 ### Lists
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/lists` | Get all lists |
-| POST | `/lists` | Create a list `{"name": "Costco Run"}` |
-| DELETE | `/lists/{list_id}` | Delete a list (and all its items) |
+|Method|Endpoint|Description|
+|-|-|-|
+|GET|`/lists`|Get all lists|
+|POST|`/lists`|Create a list `{"name": "Costco Run"}`|
+|DELETE|`/lists/{list\_id}`|Delete a list (and all its items)|
 
 ### Items
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/lists/{list_id}/items` | Get all items in a list |
-| POST | `/lists/{list_id}/items` | Add an item `{"name": "Milk"}` |
-| PATCH | `/lists/{list_id}/items/{item_id}` | Toggle purchased `{"purchased": true}` |
-| DELETE | `/lists/{list_id}/items/{item_id}` | Remove an item |
+|Method|Endpoint|Description|
+|-|-|-|
+|GET|`/lists/{list\_id}/items`|Get all items in a list|
+|POST|`/lists/{list\_id}/items`|Add an item `{"name": "Milk"}`|
+|PATCH|`/lists/{list\_id}/items/{item\_id}`|Toggle purchased `{"purchased": true}`|
+|DELETE|`/lists/{list\_id}/items/{item\_id}`|Remove an item|
 
----
+\---
 
 ## Data
 
@@ -47,6 +54,7 @@ No setup needed — it's created automatically on first run.
 
 ## Next Steps
 
-- Add a simple HTML/JS frontend
-- Deploy to a home server or free tier (Railway, Render, Fly.io)
-- Add a shared link / PIN so family members can bookmark the URL
+* Add a simple HTML/JS frontend
+* Deploy to a home server or free tier (Railway, Render, Fly.io)
+* Add a shared link / PIN so family members can bookmark the URL
+
