@@ -79,8 +79,10 @@ if DATABASE_URL:
                 created_at           BIGINT  NOT NULL
             )
         """)
-        _run_migrations_pg(cur, conn)
+        # Commit CREATE TABLE statements before running migrations.
+        # Postgres requires tables to be visible before ALTER TABLE can reference them.
         conn.commit()
+        _run_migrations_pg(cur, conn)
         cur.close()
         conn.close()
 
