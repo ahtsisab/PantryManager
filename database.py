@@ -35,8 +35,20 @@ if DATABASE_URL:
         return dict(zip(cols, row)) if row else None
 
     def init_db() -> None:
-        conn = get_db()
-        cur  = conn.cursor()
+        import time as _time
+        # Retry loop: Postgres on Railway may not be ready immediately at startup
+        last_err = None
+        for attempt in range(10):
+            try:
+                conn = get_db()
+                break
+            except Exception as e:
+                last_err = e
+                _time.sleep(2)
+        else:
+            raise RuntimeError(f"Could not connect to Postgres after retries: {last_err}")
+
+        cur = conn.cursor()
         cur.execute("""
             CREATE TABLE IF NOT EXISTS lists (
                 id          TEXT PRIMARY KEY,
