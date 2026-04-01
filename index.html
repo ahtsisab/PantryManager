@@ -184,7 +184,7 @@
 </head>
 <body>
 <div class="app">
-  <header><h1>PBJ <span>Groceries</span></h1></header>
+  <header><h1>PBJ <span>Pantry</span></h1></header>
 
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('grocery')" id="tab-grocery">🛒 Grocery Lists</button>
@@ -791,13 +791,28 @@ async function updatePantryStatus(pantryId, newStatus) {
       body: JSON.stringify({ status: newStatus })
     });
     const data = await res.json();
-    const idx = pantryItems.findIndex(p => p.id === pantryId);
-    if (idx !== -1) pantryItems[idx] = data.pantry_item;
-    renderPantry();
-    renderLists(); // ✅ fix: refresh grocery hints after status change
-    if (data.grocery_item) {
-      await loadLists();
-      showToast(`${data.pantry_item.name} added to Shopping list`, 'shopping');
+
+    if (data.deleted) {
+      // Item marked Out — removed from pantry entirely
+      const removed = pantryItems.find(p => p.id === pantryId);
+      pantryItems = pantryItems.filter(p => p.id !== pantryId);
+      renderPantry();
+      renderLists();
+      if (data.grocery_item) {
+        await loadLists();
+        showToast(`${removed?.name ?? 'Item'} removed from pantry, added to Shopping list`, 'shopping');
+      } else {
+        showToast(`${removed?.name ?? 'Item'} removed from pantry (qty: 0)`, 'pantry');
+      }
+    } else {
+      const idx = pantryItems.findIndex(p => p.id === pantryId);
+      if (idx !== -1) pantryItems[idx] = data.pantry_item;
+      renderPantry();
+      renderLists();
+      if (data.grocery_item) {
+        await loadLists();
+        showToast(`${data.pantry_item.name} added to Shopping list`, 'shopping');
+      }
     }
   } catch(e) { showToast('Could not update status'); }
 }

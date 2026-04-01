@@ -104,10 +104,11 @@ def update_pantry_item(pantry_id: str, body: PantryUpdate):
     """
     Update a pantry item.
     - Category changes are treated as permanent user overrides.
-    - Status transition in_stock → low/out auto-adds the item to the Shopping list
-      (created if needed; duplicates are skipped).
+    - Status transition -> low: auto-adds to Shopping list (no duplicates).
+    - Status transition -> out: removes item from pantry entirely (qty = 0)
+      and auto-adds to Shopping list.
 
-    Returns: { pantry_item: PantryOut, grocery_item: ItemOut | None }
+    Returns: { pantry_item: PantryOut | None, grocery_item: ItemOut | None, deleted: bool }
     """
     conn = get_db()
     cur  = conn.cursor()
@@ -119,8 +120,24 @@ def update_pantry_item(pantry_id: str, body: PantryUpdate):
         raise HTTPException(status_code=404, detail="Pantry item not found")
 
     new_name     = body.name.strip()     if body.name     else existing["name"]
-    new_quantity  = body.quantity.strip() if body.quantity else existing["quantity"]
+    new_quantity = body.quantity.strip() if body.quantity else existing["quantity"]
     new_status   = body.status           if body.status in VALID_STATUSES else existing["status"]
+
+    # OUT: delete from pantry + add to shopping list
+    if new_status == "out":
+        cur.execute(q("DELETE FROM pantry WHERE id = ?"), (pantry_id,))
+        conn.commit()
+        grocery_item = _maybe_add_to_shopping(
+            cur, conn,
+            prev_status=existing["status"],
+            new_status="out",
+            name=new_name,
+            quantity=new_quantity or "1",
+        )
+        cur.close(); conn.close()
+        return {"pantry_item": None, "grocery_item": grocery_item, "deleted": True}
+
+    # LOW / IN_STOCK: normal update
     new_category, new_overridden = _resolve_category(body, existing)
 
     cur.execute(
@@ -141,7 +158,7 @@ def update_pantry_item(pantry_id: str, body: PantryUpdate):
     )
 
     cur.close(); conn.close()
-    return {"pantry_item": updated_pantry, "grocery_item": grocery_item}
+    return {"pantry_item": updated_pantry, "grocery_item": grocery_item, "deleted": False}
 
 
 @router.delete("/pantry/{pantry_id}", status_code=204)
@@ -174,7 +191,7 @@ def _maybe_add_to_shopping(cur, conn, prev_status: str,
     If status transitions from in_stock → low/out, add the item to the Shopping list.
     Returns the new grocery ItemOut dict, or None if no item was created.
     """
-    if new_status not in ("low", "out") or prev_status != "in_stock":
+    if new_status not in ("low", "out") or prev_status == new_status:
         return None
 
     shopping = get_or_create_shopping_list(cur, conn)
