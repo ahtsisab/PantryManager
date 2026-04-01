@@ -58,6 +58,44 @@ def get_categories():
     return {"categories": list(CATEGORY_KEYWORDS.keys())}
 
 
+# ── AUTOCOMPLETE SUGGESTIONS ───────────────────────────────────────────────────
+
+@router.get("/suggestions")
+def get_suggestions():
+    """
+    Return a merged, deduplicated list of autocomplete suggestions from:
+      1. The hardcoded keyword table (common grocery items per category)
+      2. All distinct item names previously added to any grocery list
+      3. All distinct pantry item names
+
+    The frontend merges these and filters client-side as the user types.
+    """
+    # Source 1: hardcoded keywords — use multi-word ones and title-case singles
+    hardcoded: set[str] = set()
+    for keywords in CATEGORY_KEYWORDS.values():
+        for kw in keywords:
+            # Include multi-word keywords and single words longer than 3 chars
+            if " " in kw or len(kw) > 3:
+                hardcoded.add(kw.title())
+
+    # Source 2 + 3: historical names from DB
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("SELECT DISTINCT name FROM items WHERE name IS NOT NULL AND name != ''")
+    history_items = {row["name"] for row in fetchall(cur)}
+    cur.execute("SELECT DISTINCT name FROM pantry WHERE name IS NOT NULL AND name != ''")
+    history_pantry = {row["name"] for row in fetchall(cur)}
+    cur.close(); conn.close()
+
+    # Merge all sources, sorted alphabetically
+    all_suggestions = sorted(
+        hardcoded | history_items | history_pantry,
+        key=lambda s: s.lower()
+    )
+
+    return {"suggestions": all_suggestions}
+
+
 # ── PANTRY CRUD ────────────────────────────────────────────────────────────────
 
 @router.get("/pantry", response_model=list[PantryOut])

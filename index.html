@@ -180,6 +180,26 @@
     .loading-spinner { display:inline-block; width:18px; height:18px; border:2px solid var(--line); border-top-color:var(--amber); border-radius:50%; animation:spin .6s linear infinite; }
     @keyframes spin { to{transform:rotate(360deg);} }
     .loading-state { display:flex; align-items:center; justify-content:center; gap:10px; padding:60px; color:var(--brown); opacity:.5; }
+
+    /* ── AUTOCOMPLETE ── */
+    .ac-wrap { position: relative; flex: 1; display: flex; }
+    .ac-wrap input { width: 100%; }
+    .ac-dropdown {
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 300;
+      background: white; border: 1.5px solid var(--amber); border-top: none;
+      border-radius: 0 0 10px 10px; box-shadow: var(--shadow-lg);
+      max-height: 220px; overflow-y: auto;
+      display: none;
+    }
+    .ac-dropdown.open { display: block; }
+    .ac-item {
+      padding: 8px 14px; font-size: .875rem; cursor: pointer;
+      color: var(--bark); transition: background .1s;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .ac-item:hover, .ac-item.focused { background: var(--paper); }
+    .ac-item mark { background: none; color: var(--amber); font-weight: 700; }
+    .ac-item-source { font-size: .68rem; color: var(--brown); opacity: .45; margin-left: auto; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -269,7 +289,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const API = 'https://web-production-fb421.up.railway.app';
+const API = 'http://localhost:8000';
 
 let lists        = [];
 let itemsCache   = {};
@@ -281,7 +301,7 @@ let pendingDates = {};
 
 // ── INIT ──────────────────────────────────────────────────
 async function init() {
-  await Promise.all([loadCategories(), loadLists(), loadPantry()]);
+  await Promise.all([loadCategories(), loadSuggestions(), loadLists(), loadPantry()]);
 }
 
 // ── TABS ──────────────────────────────────────────────────
@@ -328,6 +348,7 @@ function renderLists() {
     return;
   }
   c.innerHTML = lists.map(listCardHTML).join('');
+  wireGroceryAutocomplete();
 }
 
 function listCardHTML(list) {
@@ -554,6 +575,7 @@ function refreshCard(listId) {
   const tmp = document.createElement('div');
   tmp.innerHTML = listCardHTML(list);
   card.replaceWith(tmp.firstElementChild);
+  wireGroceryAutocomplete();
 }
 
 // ── PANTRY ────────────────────────────────────────────────
@@ -830,6 +852,7 @@ function openModal(type) {
   document.getElementById(`modal-${type}`).classList.add('open');
   const first = document.querySelector(`#modal-${type} input`);
   if (first) setTimeout(() => first.focus(), 50);
+  if (type === 'pantry') wirePantryAutocomplete();
 }
 function closeModal(type) {
   document.getElementById(`modal-${type}`).classList.remove('open');
@@ -870,6 +893,124 @@ function formatDate(iso) {
 function catEmoji(cat) {
   const map = { Produce:'🥦', Dairy:'🥛', Meat:'🥩', Bakery:'🍞', Drinks:'🥤', Frozen:'🧊', Pantry:'🫙', Snacks:'🍿', Household:'🧹', Other:'📦' };
   return map[cat] || '📦';
+}
+
+// ── AUTOCOMPLETE ─────────────────────────────────────────
+let suggestions = [];
+
+async function loadSuggestions() {
+  try {
+    const res = await fetch(`${API}/suggestions`);
+    const data = await res.json();
+    suggestions = data.suggestions || [];
+  } catch(e) {}
+}
+
+function attachAutocomplete(input, onSelect) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ac-wrap';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const dropdown = document.createElement('div');
+  dropdown.className = 'ac-dropdown';
+  wrap.appendChild(dropdown);
+  let focusedIdx = -1;
+
+  function isHistory(s) {
+    const sl = s.toLowerCase();
+    return pantryItems.some(p => p.name.toLowerCase() === sl) ||
+      Object.values(itemsCache).flat().some(i => i.name.toLowerCase() === sl);
+  }
+
+  function getMatches(query) {
+    if (!query || query.length < 1) return [];
+    const ql = query.toLowerCase();
+    const starts = suggestions.filter(s => s.toLowerCase().startsWith(ql));
+    const contains = suggestions.filter(s => s.toLowerCase().includes(ql) && !s.toLowerCase().startsWith(ql));
+    const all = [...new Set([...starts, ...contains])];
+    // recent items first
+    const recent = all.filter(s => isHistory(s));
+    const rest = all.filter(s => !isHistory(s));
+    return [...recent, ...rest].slice(0, 8);
+  }
+
+  function highlight(text, query) {
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return esc(text);
+    return esc(text.slice(0, idx)) +
+      '<mark>' + esc(text.slice(idx, idx + query.length)) + '</mark>' +
+      esc(text.slice(idx + query.length));
+  }
+
+  function render(query) {
+    const matches = getMatches(query);
+    focusedIdx = -1;
+    if (!matches.length) { dropdown.classList.remove('open'); return; }
+    dropdown.innerHTML = matches.map((s, i) =>
+      '<div class="ac-item" data-idx="' + i + '" data-value="' + esc(s) + '">' +
+        highlight(s, query) +
+        (isHistory(s) ? '<span class="ac-item-source">recent</span>' : '') +
+      '</div>'
+    ).join('');
+    dropdown.classList.add('open');
+    dropdown.querySelectorAll('.ac-item').forEach(el => {
+      el.addEventListener('mousedown', e => { e.preventDefault(); select(el.dataset.value); });
+    });
+  }
+
+  function select(value) {
+    input.value = value;
+    dropdown.classList.remove('open');
+    focusedIdx = -1;
+    if (onSelect) onSelect(value);
+    input.focus();
+  }
+
+  function close() { dropdown.classList.remove('open'); focusedIdx = -1; }
+
+  input.addEventListener('input',  () => render(input.value));
+  input.addEventListener('focus',  () => { if (input.value) render(input.value); });
+  input.addEventListener('blur',   () => setTimeout(close, 150));
+  input.addEventListener('keydown', e => {
+    const items = dropdown.querySelectorAll('.ac-item');
+    if (!dropdown.classList.contains('open') || !items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusedIdx = Math.min(focusedIdx + 1, items.length - 1);
+      items.forEach((el, i) => el.classList.toggle('focused', i === focusedIdx));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusedIdx = Math.max(focusedIdx - 1, 0);
+      items.forEach((el, i) => el.classList.toggle('focused', i === focusedIdx));
+    } else if (e.key === 'Enter' && focusedIdx >= 0) {
+      e.preventDefault(); e.stopPropagation();
+      select(items[focusedIdx].dataset.value);
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  });
+}
+
+function wireGroceryAutocomplete() {
+  document.querySelectorAll('.add-item-name').forEach(input => {
+    if (input.dataset.acAttached) return;
+    input.dataset.acAttached = '1';
+    attachAutocomplete(input, () => {
+      const card = input.closest('.list-card');
+      if (card) {
+        const qtyInput = card.querySelector('.add-item-qty');
+        if (qtyInput) setTimeout(() => qtyInput.focus(), 0);
+      }
+    });
+  });
+}
+
+function wirePantryAutocomplete() {
+  const input = document.getElementById('pantry-name-input');
+  if (input && !input.dataset.acAttached) {
+    input.dataset.acAttached = '1';
+    attachAutocomplete(input, null);
+  }
 }
 
 init();
